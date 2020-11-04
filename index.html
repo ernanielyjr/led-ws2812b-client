@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KRK Monitor Led Control</title>
+  <link rel="stylesheet" href="main.css" />
+  <script type="text/javascript" src="main.js"></script>
+</head>
+
+<body>
+  <h1>KRK Monitor Led Control</h1>
+
+  <div class="param-item">
+    <button type="button" id="on" onclick="on()">ON</button>
+    <button type="button" id="off" onclick="off()">OFF</button><br />
+  </div>
+
+  <div class="param-item">
+    <label>Color:</label>
+    <input id="color" type="color" oninput="onColor(this.value)" />
+  </div>
+
+  <div class="param-item">
+    <label>Brightness:</label>
+    <input id="brightness" type="range" min="0" max="255" value="100" step="5" oninput="onBrightness(this.value)" />
+    <span id="brightness-text"></span>
+  </div>
+
+  <div class="param-item">
+    <label>Speed:</label>
+    <input id="speed" type="range" min="5" max="5000" step="5" oninput="onSpeed(this.value)" />
+      <span id="speed-text"></span>
+    </div>
+
+  <!-- <div>
+    <label>Auto cycle:</label>
+    <a href="#" onclick="onAuto('+')">Play</a>
+    <a href="#" onclick="onAuto('-')">Stop</a>
+    <br />time between change<br />
+  </div>
+
+  <br />next | prev<br /> -->
+
+
+  <div id="modes"></div>
+
+  <div>
+    <button type="button" onclick="resetConfig()">Default Configs</button><br />
+  </div>
+  SALVAR PRESET<br />
+  EXCLUIR PRESET<br />
+  LISTAR PRESET<br />
+</body>
+
+</html>
