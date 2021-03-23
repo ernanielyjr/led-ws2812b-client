@@ -1,4 +1,7 @@
-const baseURL = 'http://192.168.0.123'
+#include <pgmspace.h>
+
+char main_js[] PROGMEM = R"=====(
+const baseURL = '/'; // http://192.168.0.123/
 
 let debounceTimer;
 const debounceDelay = 200;
@@ -105,7 +108,7 @@ function sendConfigs() {
   query += `s=${config.speed}&`;
 
   var xhttp = new XMLHttpRequest();
-  xhttp.open('GET', `${baseURL}/set?${query}`, true);
+  xhttp.open('GET', `${baseURL}set?${query}`, true);
   xhttp.send();
 }
 
@@ -328,3 +331,4 @@ window.addEventListener('DOMContentLoaded', (e) => {
 
   listPressets();
 });
+)=====";

@@ -1,3 +1,6 @@
+#include <pgmspace.h>
+
+char main_css[] PROGMEM = R"=====(
 body {
   font-family: Arial, sans-serif;
   margin: 20px;
@@ -70,3 +73,4 @@ button.primary {
 .left {
   text-align: left;
 }
+)=====";
