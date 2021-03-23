@@ -1,3 +1,5 @@
+#include <pgmspace.h>
+char index_html[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html>
 
@@ -49,3 +51,4 @@
 </body>
 
 </html>
+)=====";
