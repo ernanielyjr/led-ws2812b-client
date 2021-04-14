@@ -1,6 +1,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <WS2812FX.h>
+#include <EEPROM.h>
 #include "variables.cpp"
 
 extern const char index_html[];
@@ -9,123 +10,192 @@ extern const char main_css[];
 
 #define STATIC_IP
 #ifdef STATIC_IP
-  IPAddress ip(192,168,0,123);
-  IPAddress gateway(192,168,0,1);
-  IPAddress subnet(255,255,255,0);
+IPAddress ip(192, 168, 0, 123);
+IPAddress gateway(192, 168, 0, 1);
+IPAddress subnet(255, 255, 255, 0);
 #endif
 
 // QUICKFIX...See https://github.com/esp8266/Arduino/issues/263
-#define min(a,b) ((a)<(b)?(a):(b))
-#define max(a,b) ((a)>(b)?(a):(b))
+// #define min(a, b) ((a) < (b) ? (a) : (b))
+// #define max(a, b) ((a) > (b) ? (a) : (b))
 
-#define LED_PIN 2                       // 0 = GPIO0, 2=GPIO2
-#define LED_COUNT 78
+#define LED_PIN_1 0
+#define LED_PIN_2 2
+#define LED_COUNT 142
 
-#define WIFI_TIMEOUT 30000              // checks WiFi every ...ms. Reset after this time, if WiFi cannot reconnect.
+#define WIFI_TIMEOUT 30000
 #define HTTP_PORT 80
 
-#define DEFAULT_COLOR 0xFF5900
-#define DEFAULT_BRIGHTNESS 128
-#define DEFAULT_SPEED 1000
-#define DEFAULT_MODE FX_MODE_RAINBOW_CYCLE
-
-unsigned long auto_last_change = 0;
 unsigned long last_wifi_check_time = 0;
-String modes = "";
-uint8_t myModes[] = {}; // *** optionally create a custom list of effect/mode numbers
-boolean auto_cycle = false;
+uint8_t myEffects[] = {}; // Criar modo policia
 
-WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+uint32_t effect = FX_MODE_RAINBOW_CYCLE;
+uint32_t color = 0xFF5900;
+uint32_t speed = 1000;
+uint32_t brightness = 128;
+
+const uint8_t SAVE_ADDR_EFFECT = 0;
+const uint8_t SAVE_ADDR_COLOR = 4;
+const uint8_t SAVE_ADDR_SPEED = 8;
+const uint8_t SAVE_ADDR_BRIGHTNESS = 12;
+
+WS2812FX ws2812fx1 = WS2812FX(LED_COUNT, LED_PIN_1, NEO_GRB + NEO_KHZ800);
+WS2812FX ws2812fx2 = WS2812FX(LED_COUNT, LED_PIN_2, NEO_GRB + NEO_KHZ800);
 ESP8266WebServer server(HTTP_PORT);
 
-void setup(){
-  Serial.begin(115200);
-  delay(500);
-  Serial.println("\n\nStarting...");
+uint32_t EEPROMReadlong(uint32_t address)
+{
+  uint8_t data4 = EEPROM.read(address);
+  uint8_t data3 = EEPROM.read(address + 1);
+  uint8_t data2 = EEPROM.read(address + 2);
+  uint8_t data1 = EEPROM.read(address + 3);
 
-  modes.reserve(5000);
-  modes_setup();
+  return ((data4 << 0) & 0xFF) + ((data3 << 8) & 0xFFFF) + ((data2 << 16) & 0xFFFFFF) + ((data1 << 24) & 0xFFFFFFFF);
+}
 
-  Serial.println("WS2812FX setup");
-  ws2812fx.init();
-  ws2812fx.setMode(DEFAULT_MODE);
-  ws2812fx.setColor(DEFAULT_COLOR);
-  ws2812fx.setSpeed(DEFAULT_SPEED);
-  ws2812fx.setBrightness(DEFAULT_BRIGHTNESS);
-  ws2812fx.start();
+void EEPROMWritelong(uint32_t address, uint32_t value)
+{
+  byte data4 = (value & 0xFF);
+  byte data3 = ((value >> 8) & 0xFF);
+  byte data2 = ((value >> 16) & 0xFF);
+  byte data1 = ((value >> 24) & 0xFF);
 
-  Serial.println("Wifi setup");
-  wifi_setup();
+  EEPROM.write(address, data4);
+  EEPROM.write(address + 1, data3);
+  EEPROM.write(address + 2, data2);
+  EEPROM.write(address + 3, data1);
+}
 
-  Serial.println("HTTP server setup");
+void save_configs()
+{
+  bool has_changes = false;
+  // TODO: fazer debounce de 10 segundos
+
+  if (EEPROMReadlong(SAVE_ADDR_EFFECT) != effect)
+  {
+    EEPROMWritelong(SAVE_ADDR_EFFECT, effect);
+    has_changes = true;
+  }
+
+  if (EEPROMReadlong(SAVE_ADDR_COLOR) != color)
+  {
+    EEPROMWritelong(SAVE_ADDR_COLOR, color);
+    has_changes = true;
+  }
+
+  if (EEPROMReadlong(SAVE_ADDR_SPEED) != speed)
+  {
+    EEPROMWritelong(SAVE_ADDR_SPEED, speed);
+    has_changes = true;
+  }
+
+  if (EEPROMReadlong(SAVE_ADDR_BRIGHTNESS) != brightness)
+  {
+    EEPROMWritelong(SAVE_ADDR_BRIGHTNESS, brightness);
+    has_changes = true;
+  }
+
+  if (has_changes)
+  {
+    EEPROM.commit();
+    Serial.println("Configs saved!");
+  }
+}
+
+void load_configs()
+{
+  setEffect(EEPROMReadlong(SAVE_ADDR_EFFECT));
+  setColor(EEPROMReadlong(SAVE_ADDR_COLOR));
+  setSpeed(EEPROMReadlong(SAVE_ADDR_SPEED));
+  setBrightness(EEPROMReadlong(SAVE_ADDR_BRIGHTNESS));
+
+  Serial.println("Configs loaded!");
+}
+
+void server_setup()
+{
   server.on("/", srv_handle_index_html);
   server.on("/main.js", srv_handle_main_js);
   server.on("/main.css", srv_handle_main_css);
-  server.on("/modes", srv_handle_modes);
-  server.on("/set", srv_handle_set);
+
+  server.on("/config", HTTP_GET, srv_handle_config_get);
+  server.on("/config", HTTP_POST, srv_handle_config_post);
+
   server.onNotFound(srv_handle_not_found);
   server.begin();
-  Serial.println("HTTP server started.");
-
-  Serial.println("ready!");
+  Serial.println("HTTP server started!");
 }
 
+void ws2812fx_setup()
+{
+  ws2812fx1.init();
+  ws2812fx1.start();
+  ws2812fx2.init();
+  ws2812fx2.start();
+  Serial.println("WS2812FX started!");
+}
 
-void loop() {
+void setup()
+{
+  Serial.begin(115200);
+  EEPROM.begin(16);
+
+  delay(2500);
+  Serial.println("\n\nStarting...");
+
+  ws2812fx_setup();
+  wifi_setup();
+  server_setup();
+  load_configs();
+
+  Serial.println("Setup complete!");
+}
+
+void loop()
+{
   unsigned long now = millis();
 
   server.handleClient();
-  ws2812fx.service();
+  ws2812fx1.service();
+  ws2812fx2.service();
 
-  if(now - last_wifi_check_time > WIFI_TIMEOUT) {
+  if (now - last_wifi_check_time > WIFI_TIMEOUT)
+  {
     Serial.print("Checking WiFi... ");
-    if(WiFi.status() != WL_CONNECTED) {
+    if (WiFi.status() != WL_CONNECTED)
+    {
       Serial.println("WiFi connection lost. Reconnecting...");
       wifi_setup();
-    } else {
+    }
+    else
+    {
       Serial.println("OK");
     }
     last_wifi_check_time = now;
   }
-
-  if(auto_cycle && (now - auto_last_change > 10000)) { // cycle effect mode every 10 seconds
-    uint8_t next_mode = (ws2812fx.getMode() + 1) % ws2812fx.getModeCount();
-    if(sizeof(myModes) > 0) { // if custom list of modes exists
-      for(uint8_t i=0; i < sizeof(myModes); i++) {
-        if(myModes[i] == ws2812fx.getMode()) {
-          next_mode = ((i + 1) < sizeof(myModes)) ? myModes[i + 1] : myModes[0];
-          break;
-        }
-      }
-    }
-    ws2812fx.setMode(next_mode);
-    Serial.print("mode is "); Serial.println(ws2812fx.getModeName(ws2812fx.getMode()));
-    auto_last_change = now;
-  }
 }
 
-
-
-/*
- * Connect to WiFi. If no connection is made within WIFI_TIMEOUT, ESP gets resettet.
- */
-void wifi_setup() {
+void wifi_setup()
+{
   Serial.println();
   Serial.print("Connecting to ");
-  Serial.println(WIFI_SSID);
+  Serial.print(WIFI_SSID);
+  Serial.print(" ");
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   WiFi.mode(WIFI_STA);
-  #ifdef STATIC_IP
-    WiFi.config(ip, gateway, subnet);
-  #endif
+#ifdef STATIC_IP
+  WiFi.config(ip, gateway, subnet);
+#endif
 
   unsigned long connect_start = millis();
-  while(WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED)
+  {
     delay(500);
     Serial.print(".");
 
-    if(millis() - connect_start > WIFI_TIMEOUT) {
+    if (millis() - connect_start > WIFI_TIMEOUT)
+    {
       Serial.println();
       Serial.print("Tried ");
       Serial.print(WIFI_TIMEOUT);
@@ -134,99 +204,138 @@ void wifi_setup() {
     }
   }
 
-  Serial.println("");
-  Serial.println("WiFi connected");
+  Serial.println(" connected!");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
-  Serial.println();
 }
 
-
-/*
- * Build <li> string for all modes.
- */
-void modes_setup() {
-  modes = "";
-  uint8_t num_modes = sizeof(myModes) > 0 ? sizeof(myModes) : ws2812fx.getModeCount();
-  for(uint8_t i=0; i < num_modes; i++) {
-    uint8_t m = sizeof(myModes) > 0 ? myModes[i] : i;
-    modes += "<li><a href='#'>";
-    modes += ws2812fx.getModeName(m);
-    modes += "</a></li>";
-  }
-}
-
-/* #####################################################
-#  Webserver Functions
-##################################################### */
-
-void srv_handle_not_found() {
+void srv_handle_not_found()
+{
   server.send(404, "text/plain", "File Not Found");
 }
 
-void srv_handle_index_html() {
-  server.send_P(200,"text/html", index_html);
+void srv_handle_index_html()
+{
+  server.send_P(200, "text/html", index_html);
 }
 
-void srv_handle_main_js() {
-  server.send_P(200,"application/javascript", main_js);
+void srv_handle_main_js()
+{
+  server.send_P(200, "application/javascript", main_js);
 }
 
-void srv_handle_main_css() {
-  server.send_P(200,"text/css", main_css);
+void srv_handle_main_css()
+{
+  server.send_P(200, "text/css", main_css);
 }
 
-void srv_handle_modes() {
-  server.send(200,"text/plain", modes);
+void setColor(uint32_t _color)
+{
+  color = _color;
+  ws2812fx1.setColor(color);
+  ws2812fx2.setColor(color);
+  Serial.print("setColor ");
+  Serial.println(ws2812fx1.getColor());
 }
 
-void srv_handle_set() {
-  for (uint8_t i=0; i < server.args(); i++){
-    if(server.argName(i) == "c") {
-      uint32_t tmp = (uint32_t) strtol(server.arg(i).c_str(), NULL, 10);
-      if(tmp >= 0x000000 && tmp <= 0xFFFFFF) {
-        ws2812fx.setColor(tmp);
-      }
-    }
+void setEffect(uint32_t _effect)
+{
+  effect = _effect;
+  ws2812fx1.setMode(effect % ws2812fx1.getModeCount());
+  ws2812fx2.setMode(effect % ws2812fx2.getModeCount());
+  Serial.print("setEffect ");
+  Serial.println(ws2812fx1.getModeName(ws2812fx1.getMode()));
+}
 
-    if(server.argName(i) == "m") {
-      uint8_t tmp = (uint8_t) strtol(server.arg(i).c_str(), NULL, 10);
-      ws2812fx.setMode(tmp % ws2812fx.getModeCount());
-      Serial.print("mode is "); Serial.println(ws2812fx.getModeName(ws2812fx.getMode()));
-    }
+void setSpeed(uint32_t _speed)
+{
+  speed = _speed;
+  ws2812fx1.setSpeed(speed);
+  ws2812fx2.setSpeed(speed);
+  Serial.print("setSpeed ");
+  Serial.println(ws2812fx1.getSpeed());
+}
 
-    if(server.argName(i) == "b") {
-      if(server.arg(i)[0] == '-') {
-        ws2812fx.setBrightness(ws2812fx.getBrightness() * 0.8);
-      } else if(server.arg(i)[0] == ' ') {
-        ws2812fx.setBrightness(min(max(ws2812fx.getBrightness(), 5) * 1.2, 255));
-      } else { // set brightness directly
-        uint8_t tmp = (uint8_t) strtol(server.arg(i).c_str(), NULL, 10);
-        ws2812fx.setBrightness(tmp);
-      }
-      Serial.print("brightness is "); Serial.println(ws2812fx.getBrightness());
-    }
+void setBrightness(uint32_t _brightness)
+{
+  brightness = _brightness;
+  ws2812fx1.setBrightness(brightness);
+  ws2812fx2.setBrightness(brightness);
+  Serial.print("setBrightness ");
+  Serial.println(ws2812fx1.getBrightness());
+}
 
-    if(server.argName(i) == "s") {
-      if(server.arg(i)[0] == '-') {
-        ws2812fx.setSpeed(max(ws2812fx.getSpeed(), 5) * 1.2);
-      } else if(server.arg(i)[0] == ' ') {
-        ws2812fx.setSpeed(ws2812fx.getSpeed() * 0.8);
-      } else {
-        uint16_t tmp = (uint16_t) strtol(server.arg(i).c_str(), NULL, 10);
-        ws2812fx.setSpeed(tmp);
-      }
-      Serial.print("speed is "); Serial.println(ws2812fx.getSpeed());
-    }
+void srv_handle_config_get()
+{
+  String json = "{";
 
-    if(server.argName(i) == "a") {
-      if(server.arg(i)[0] == '-') {
-        auto_cycle = false;
-      } else {
-        auto_cycle = true;
-        auto_last_change = 0;
-      }
+  json += "\"effect\":";
+  json += String(effect, DEC);
+  json += ",";
+
+  json += "\"color\": \"#";
+  json += String(color, HEX);
+  json += "\",";
+
+  json += "\"brightness\":";
+  json += String(brightness, DEC);
+  json += ",";
+
+  json += "\"speed\":";
+  json += String(speed, DEC);
+  json += ",";
+
+  json += "\"effects\":[";
+
+  uint8_t num_effects = sizeof(myEffects) > 0 ? sizeof(myEffects) : ws2812fx1.getModeCount();
+  for (uint8_t i = 0; i < num_effects; i++)
+  {
+    uint8_t m = sizeof(myEffects) > 0 ? myEffects[i] : i;
+
+    json += "{";
+    json += "\"id\":";
+    json += i;
+    json += ",\"name\":\"";
+    json += ws2812fx1.getModeName(m);
+    json += "\"}";
+
+    if (i < num_effects - 1)
+    {
+      json += ",";
     }
   }
+
+  json += "]";
+  json += "}";
+
+  server.send(200, "application/json", json);
+}
+
+void srv_handle_config_post()
+{
+  for (uint8_t i = 0; i < server.args(); i++)
+  {
+    const String parametter = server.argName(i);
+    const uint32_t value = strtol(server.arg(i).c_str(), NULL, 10);
+
+    if (parametter == "color" && value != color)
+    {
+      setColor(value);
+    }
+    if (parametter == "effect" && value != effect)
+    {
+      setEffect(value);
+    }
+    if (parametter == "speed" && value != speed)
+    {
+      setSpeed(value);
+    }
+    if (parametter == "brightness" && value != brightness)
+    {
+      setBrightness(value);
+    }
+  }
+
+  save_configs();
   server.send(200, "text/plain", "OK");
 }
