@@ -48,6 +48,11 @@ char index_html[] PROGMEM = R"=====(
     <button type="button" onclick="savePresset()">Salvar configuração</button><br />
   </div>
 
+  <hr />
+  <div class="param-item">
+    <button type="button" class="danger" onclick="wifi_reset()">DESCONECTAR DO WIFI</button>
+    <button type="button" class="danger" onclick="restart()">REINICIAR</button><br />
+  </div>
 </body>
 
 </html>

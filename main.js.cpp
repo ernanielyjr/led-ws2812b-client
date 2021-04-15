@@ -41,16 +41,31 @@ function request(method, url,) {
   })
 }
 
-async function sendConfigs() {
+function sendConfigs() {
   localStorage.setItem("last-config", JSON.stringify(config))
 
+  // TODO: use URLParams
   let query = '';
   query += `effect=${config.effect}&`;
   query += `color=${parseInt((config.color || '').replace(/#/g, ""), 16)}&`;
   query += `brightness=${config.brightness}&`;
   query += `speed=${config.speed}&`;
 
-  await request("POST", `${baseURL}config?${query}`);
+  request("POST", `${baseURL}config?${query}`);
+}
+
+function wifi_reset() {
+  if (!confirm("Você terá que reconfigurar a rede e senha deste dispositivo.\nDeseja realmente limpar as configurações de wifi?")) {
+    return;
+  }
+  request("POST", `${baseURL}config?wifi-reset=1`);
+}
+
+function restart() {
+  if (!confirm("Deseja reiniciar o dispositivo?")) {
+    return;
+  }
+  request("POST", `${baseURL}config?restart=1`);
 }
 
 function setConfig(newConfig) {

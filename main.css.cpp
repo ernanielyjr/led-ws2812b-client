@@ -43,6 +43,13 @@ button,
   cursor: pointer;
 }
 
+button.danger {
+  background-color: #c8004a;
+  color: #FFF;
+  font-weight: bold;
+  border-color: #860032;
+}
+
 button.primary {
   background-color: #00C814;
   color: #FFF;
